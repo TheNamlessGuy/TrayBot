@@ -24,6 +24,12 @@ NOTIFYICONDATA gNid;
 HMENU gMenu;
 bool gDoubleClick;
 
+void parseInput(std::wstring const& str)
+{
+	std::string str1(str.begin(), str.end());
+	MessageBox(inputHWND, TEXT("YOU INPUTTED SOMETHING!"), NULL, 0);
+}
+
 void centerWindows()
 {
 	RECT rect;
@@ -53,6 +59,12 @@ LRESULT CALLBACK newEdit(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		switch (wparam) {
 		case VK_ESCAPE:
 			ShowWindow(inputHWND, SW_HIDE);
+			return 0;
+		case VK_RETURN:
+			TCHAR buffer[1024];
+			GetWindowText(inputHWND_input, buffer, 1024);
+			parseInput(std::wstring(buffer));
+			SetWindowText(inputHWND_input, TEXT(""));
 			return 0;
 		}
 	default:
