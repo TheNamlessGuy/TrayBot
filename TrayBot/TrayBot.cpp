@@ -9,6 +9,8 @@
 #include <fstream>
 #include <sstream>
 
+#include <codecvt>
+
 #define NAM_HOTKEY_ID 1
 #define NAM_TRAYICON_ID 0
 #define NAM_TRAYICON_CBID (WM_USER + 1)
@@ -20,6 +22,8 @@
 #define NAM_EDIT_INPUT 0
 #define NAM_BTN_ADDNEW 1
 #define NAM_EDIT_CREATE 2
+#define NAM_EDIT_PROMPT 3
+#define NAM_BTN_PROMPT 4
 
 enum class ACTION
 {
@@ -32,6 +36,10 @@ enum class ACTION
 
 HWND createNewHWND;
 HWND inputHWND;
+HWND promptHWND;
+
+HWND promptHWND_input;
+HWND promptHWND_text;
 
 HWND createNewHWND_input;
 HWND createNewHWND_dropdown;
@@ -44,6 +52,7 @@ NOTIFYICONDATA gNid;
 HMENU gTrayMenu;
 HMENU gDropDownMenu;
 bool gDoubleClick;
+ACTION currentPromptAction;
 
 std::vector<NAM_ENTRY> gEntries;
 
@@ -83,7 +92,7 @@ void addNewEntry(std::wstring const& name, ACTION const& action, std::wstring co
 
 	for (NAM_ENTRY const& ne : gEntries) {
 		if (std::get<0>(ne) == name) {
-			showNotification(TEXT("Error"), TEXT("Value ") + name + TEXT(" already exists!"));
+			showNotification(TEXT("Error"), TEXT("Value '") + name + TEXT("' already exists!"));
 			return;
 		}
 	}
@@ -108,15 +117,21 @@ void executeEntry(NAM_ENTRY ne)
 	}
 		break;
 	case ACTION::SETCLIPBOARD: {
-		int len = std::get<2>(ne).length();
+		std::wstring value = std::get<2>(ne);
+		int len = (value.length() + 1) * sizeof(WCHAR);
+
 		HGLOBAL newClip = GlobalAlloc(GMEM_MOVEABLE, len);
-		memcpy(GlobalLock(newClip), std::get<2>(ne).c_str(), len);
+		memcpy(GlobalLock(newClip), value.c_str(), len);
 		GlobalUnlock(newClip);
 
 		OpenClipboard(0);
 		EmptyClipboard();
-		SetClipboardData(CF_TEXT, newClip);
+		SetClipboardData(CF_UNICODETEXT, newClip);
 		CloseClipboard();
+
+		GlobalFree(newClip);
+
+		showNotification(TEXT("Success"), TEXT("Copied '") + value + TEXT("' to clipboard"));
 	}
 		break;
 	}
@@ -127,8 +142,10 @@ void parseInput(std::wstring const& str)
 	for (NAM_ENTRY const& ne : gEntries) {
 		if (std::get<0>(ne) == str) {
 			executeEntry(ne);
+			return;
 		}
 	}
+	showNotification(TEXT("Error"), TEXT("Command '") + str + TEXT("' not found"));
 }
 
 void centerWindows()
@@ -141,6 +158,9 @@ void centerWindows()
 	GetWindowRect(inputHWND, &rect);
 	SetWindowLong(inputHWND, GWL_STYLE, GetWindowLong(inputHWND, GWL_STYLE) && !WS_BORDER && !WS_SIZEBOX && !WS_DLGFRAME);
 	SetWindowPos(inputHWND, 0, (GetSystemMetrics(SM_CXSCREEN) - rect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - rect.bottom) / 2, rect.right, rect.bottom, 0);
+
+	GetWindowRect(promptHWND, &rect);
+	SetWindowPos(promptHWND, 0, (GetSystemMetrics(SM_CXSCREEN) - rect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - rect.bottom) / 2, rect.right, rect.bottom, 0);
 }
 
 void menuItems()
@@ -192,6 +212,12 @@ void windowStyles()
 	SendMessage(inputHWND_input, WM_SETFONT, WPARAM(f), TRUE);
 	oldINPUTProc = (WNDPROC) SetWindowLongPtr(inputHWND_input, GWLP_WNDPROC, (LONG_PTR) newINPUTEdit);
 
+	// Prompt
+	promptHWND_text = CreateWindow(TEXT("STATIC"), TEXT(""), WS_VISIBLE | WS_CHILD, 10, 10, 300, 20, promptHWND, NULL, NULL, NULL);
+	promptHWND_input = CreateWindow(TEXT("edit"), NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_TABSTOP, 10, 30, 300, 50, promptHWND, (HMENU)NAM_EDIT_PROMPT, NULL, NULL);
+	SendMessage(promptHWND_input, WM_SETFONT, WPARAM(f), TRUE);
+	CreateWindow(TEXT("button"), TEXT("OK"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 10, 90, 300, 25, promptHWND, (HMENU)NAM_BTN_PROMPT, NULL, NULL);
+
 	// CREATE NEW
 	// "New Input" text
 	CreateWindow(TEXT("STATIC"), TEXT("New input:"), WS_VISIBLE | WS_CHILD, 10, 10, 100, 20, createNewHWND, NULL, NULL, NULL);
@@ -206,6 +232,12 @@ void windowStyles()
 
 	// Ok button
 	CreateWindow(TEXT("button"), TEXT("Add New"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 10, 120, 300, 25, createNewHWND, (HMENU) NAM_BTN_ADDNEW, NULL, NULL);
+}
+
+void showPrompt(std::wstring promptText)
+{
+	SetWindowText(promptHWND_text, promptText.c_str());
+	_SHOW(promptHWND);
 }
 
 std::wstring selectFolder()
@@ -241,6 +273,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		break;
 	// X or ALT+F4
 	case WM_CLOSE:
+		_HIDE(promptHWND);
 		_HIDE(inputHWND);
 		_HIDE(createNewHWND);
 		break;
@@ -250,13 +283,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		break;
 	// Application (in general) should quit
 	case WM_QUIT:
+		DestroyWindow(promptHWND);
 		DestroyWindow(inputHWND);
 		DestroyWindow(createNewHWND);
 		break;
 	// Window button click
 	case WM_COMMAND:
 		switch (LOWORD(wparam)) {
-		case NAM_BTN_ADDNEW:
+		// Create new button
+		case NAM_BTN_ADDNEW: {
 			int index = SendMessage(createNewHWND_dropdown, CB_GETCURSEL, 0, 0) + 6000;
 			switch (index) {
 			case int(ACTION::OPENFOLDER) : {
@@ -267,11 +302,28 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				SetWindowText(createNewHWND_input, TEXT(""));
 				addNewEntry(std::wstring(buffer), ACTION::OPENFOLDER, path);
 			}
-				break;
+										   break;
 			case int(ACTION::SETCLIPBOARD) :
-				MessageBox(NULL, TEXT("SET CLIPBOARD"), 0, 0);
+				currentPromptAction = ACTION::SETCLIPBOARD;
+				showPrompt(TEXT("Set clipboard to:"));
 				break;
 			}
+		}
+			break;
+		// Prompt button
+		case NAM_BTN_PROMPT: {
+			_HIDE(promptHWND);
+
+			TCHAR prompt[1024];
+			GetWindowText(promptHWND_input, prompt, 1024);
+			SetWindowText(promptHWND_input, TEXT(""));
+
+			TCHAR value[1024];
+			GetWindowText(createNewHWND_input, value, 1024);
+			SetWindowText(createNewHWND_input, TEXT(""));
+
+			addNewEntry(std::wstring(value), currentPromptAction, std::wstring(prompt));
+		}
 			break;
 		}
 		break;
@@ -321,7 +373,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
 void readOldData()
 {
-	std::wifstream ifs("data.txt");
+	std::wifstream ifs("./data.txt");
 	std::wstring name, action, input;
 	std::wstringstream wss;
 	int temp = 0;
@@ -344,11 +396,14 @@ void readOldData()
 				gEntries.push_back(NAM_ENTRY(name, ACTION(std::stoi(action)), input));
 			}
 		}
+		temp = 0;
+		wss.clear();
 	}
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreviInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+	std::locale::global(std::locale(std::locale::empty(), new std::codecvt_utf8<wchar_t>)); // Read UTF-8 files
 	readOldData();
 	gDoubleClick = false;
 	gIcon = (HICON)LoadImage(NULL, TEXT("icon.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE);
@@ -375,6 +430,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreviInstance, LPSTR lpCmdLin
 	createNewHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - New Input Value"), WS_OVERLAPPEDWINDOW, 10, 10, 330, 180, NULL, NULL, hInstance, NULL);
 	_HIDE(createNewHWND);
 
+	promptHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - Prompt"), WS_OVERLAPPEDWINDOW, 10, 10, 330, 150, NULL, NULL, hInstance, NULL);
+	_HIDE(promptHWND);
+
 	// Center the windows to the screen
 	centerWindows();
 	// Create menu for tray icon
@@ -398,17 +456,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreviInstance, LPSTR lpCmdLin
 	wcscpy_s(gNid.szTip, TEXT("TrayBot"));
 
 	Shell_NotifyIcon(NIM_ADD, &gNid);
-
-	// TODO: DELETE
-	/*
-	NAM_ENTRY ne{ TEXT("dr"), ACTION::OPENFOLDER, TEXT("C:\\Users\\TheNamlessGuy\\Dropbox") };
-	gEntries.push_back(ne);
-
-	std::get<0>(ne) = TEXT("test");
-	std::get<1>(ne) = ACTION::SETCLIPBOARD;
-	std::get<2>(ne) = TEXT("Coolboi");
-	gEntries.push_back(ne);
-	*/
 
 	// Message loop
 	MSG msg;

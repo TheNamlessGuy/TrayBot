@@ -1,1 +1,6 @@
+﻿steamapps|6000|D:\Programs\Steam\steamapps\common
+game|6000|D:\BitBucket\Passacaglia
+steamappsc|6000|C:\Users\TheNamlessGuy\Steam\steamapps\common
+bb|6000|D:\BitBucket
+git|6000|D:\GitHub
 dr|6000|C:\Users\TheNamlessGuy\Dropbox
