@@ -212,7 +212,7 @@ void menuItems()
 {
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_SHOWWINDOW, TEXT("Show Input"));
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_ADDNEW, TEXT("Add New"));
-	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_LISTALL, TEXT("List all"));
+	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_LISTALL, TEXT("List All"));
 	AppendMenu(gTrayMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_EXIT, TEXT("Quit"));
 }

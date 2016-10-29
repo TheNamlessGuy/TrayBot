@@ -1,4 +1,4 @@
-﻿Build started 30/10/2016 00:11:31.
+﻿Build started 30/10/2016 00:20:44.
      1>Project "D:\GitHub\TrayBot\TrayBot\TrayBot.vcxproj" on node 2 (Build target(s)).
      1>ClCompile:
          D:\Programs\Visual Studio\VC\bin\CL.exe /c /Zi /nologo /W3 /WX- /sdl /O2 /Oi /Oy- /GL /D WIN32 /D NDEBUG /D _WINDOWS /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Fo"Release\\" /Fd"Release\vc120.pdb" /Gd /TP /analyze- /errorReport:prompt TrayBot.cpp
@@ -14,4 +14,4 @@
 
 Build succeeded.
 
-Time Elapsed 00:00:01.10
+Time Elapsed 00:00:01.28
