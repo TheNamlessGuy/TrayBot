@@ -17,13 +17,17 @@
 
 #define NAM_TRAY_SHOWWINDOW 5000
 #define NAM_TRAY_ADDNEW 5001
-#define NAM_TRAY_EXIT 5002
+#define NAM_TRAY_LISTALL 5002
+#define NAM_TRAY_EXIT 5003
 
 #define NAM_EDIT_INPUT 0
 #define NAM_BTN_ADDNEW 1
 #define NAM_EDIT_CREATE 2
 #define NAM_EDIT_PROMPT 3
 #define NAM_BTN_PROMPT 4
+
+#define NAM_DEFAULTCHARSIZE 25
+#define NAM_LIST_HEIGHT 250
 
 enum class ACTION
 {
@@ -37,6 +41,7 @@ enum class ACTION
 HWND createNewHWND;
 HWND inputHWND;
 HWND promptHWND;
+HWND listHWND;
 
 HWND promptHWND_input;
 HWND promptHWND_text;
@@ -53,6 +58,7 @@ HMENU gTrayMenu;
 HMENU gDropDownMenu;
 bool gDoubleClick;
 ACTION currentPromptAction;
+int gListNextY;
 
 std::vector<NAM_ENTRY> gEntries;
 
@@ -76,8 +82,40 @@ void showNotification(std::wstring const& title, std::wstring const& msg)
 	Shell_NotifyIcon(NIM_MODIFY, &gNid);
 }
 
+void setScrollHeight()
+{
+	SCROLLINFO si;
+	si.cbSize = sizeof(si);
+	si.fMask = SIF_RANGE | SIF_PAGE;
+	si.nMin = 0;
+	si.nPage = NAM_LIST_HEIGHT / NAM_DEFAULTCHARSIZE;
+	si.nMax = gEntries.size() - 3;
+	SetScrollInfo(listHWND, SB_VERT, &si, TRUE);
+}
+
+void setList()
+{
+	gListNextY = 0;
+	for (int i = 0; i < gEntries.size(); i++) {
+		CreateWindow(TEXT("STATIC"), std::get<0>(gEntries[i]).c_str(), WS_VISIBLE | WS_CHILD, 10, gListNextY, 100, 20, listHWND, NULL, NULL, NULL);
+		gListNextY += 20;
+	}
+	setScrollHeight();
+	//setListHeight();
+}
+
 void addNewEntry(std::wstring const& name, ACTION const& action, std::wstring const& input)
 {
+	if (name == TEXT("")) {
+		showNotification(TEXT("Error"), TEXT("Values can not be empty"));
+		return;
+	}
+
+	if (input == TEXT("")) {
+		showNotification(TEXT("Error"), TEXT("Values can not be empty"));
+		return;
+	}
+
 	std::size_t found = name.find('|');
 	if (found != std::string::npos) {
 		showNotification(TEXT("Error"), TEXT("Values can not contain the character '|'"));
@@ -99,6 +137,11 @@ void addNewEntry(std::wstring const& name, ACTION const& action, std::wstring co
 
 	// Everything is fine
 	gEntries.push_back(NAM_ENTRY(name, action, input));
+
+	CreateWindow(TEXT("STATIC"), name.c_str(), WS_VISIBLE | WS_CHILD, 10, gListNextY, 100, 20, listHWND, NULL, NULL, NULL);
+	gListNextY += 20;
+	setScrollHeight();
+	//setListHeight();
 
 	std::wofstream ofs(TEXT("data.txt"), std::ios::app);
 	ofs << name << '|' << int(action) << '|' << input << std::endl;
@@ -152,7 +195,6 @@ void centerWindows()
 {
 	RECT rect;
 	GetWindowRect(createNewHWND, &rect);
-	//SetWindowLong(createNewHWND, GWL_STYLE, GetWindowLong(createNewHWND, GWL_STYLE) && !WS_BORDER && !WS_SIZEBOX && !WS_DLGFRAME);
 	SetWindowPos(createNewHWND, 0, (GetSystemMetrics(SM_CXSCREEN) - rect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - rect.bottom) / 2, rect.right, rect.bottom, 0);
 
 	GetWindowRect(inputHWND, &rect);
@@ -161,12 +203,16 @@ void centerWindows()
 
 	GetWindowRect(promptHWND, &rect);
 	SetWindowPos(promptHWND, 0, (GetSystemMetrics(SM_CXSCREEN) - rect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - rect.bottom) / 2, rect.right, rect.bottom, 0);
+
+	GetWindowRect(listHWND, &rect);
+	SetWindowPos(listHWND, 0, (GetSystemMetrics(SM_CXSCREEN) - rect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - rect.bottom) / 2, rect.right, rect.bottom, 0);
 }
 
 void menuItems()
 {
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_SHOWWINDOW, TEXT("Show Input"));
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_ADDNEW, TEXT("Add New"));
+	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_LISTALL, TEXT("List all"));
 	AppendMenu(gTrayMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_EXIT, TEXT("Quit"));
 }
@@ -248,7 +294,7 @@ std::wstring selectFolder()
 	bi.lpfn = NULL;
 
 	LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
-	if (pidl == 0) { return NULL; }
+	if (pidl == 0) { return TEXT(""); }
 
 	TCHAR pathBuffer[MAX_PATH];
 	SHGetPathFromIDList(pidl, pathBuffer);
@@ -262,6 +308,42 @@ std::wstring selectFolder()
 	return pathBuffer;
 }
 
+void handleScrolling(HWND hwnd, WPARAM wparam)
+{
+	SCROLLINFO si;
+	si.cbSize = sizeof(si);
+	si.fMask = SIF_ALL;
+	GetScrollInfo(hwnd, SB_VERT, &si);
+
+	int yPos = si.nPos;
+	switch (LOWORD(wparam)) {
+	case SB_LINEUP:
+		si.nPos -= 1;
+		break;
+	case SB_LINEDOWN:
+		si.nPos += 1;
+		break;
+	case SB_PAGEUP:
+		si.nPos -= si.nPage;
+		break;
+	case SB_PAGEDOWN:
+		si.nPos += si.nPage;
+		break;
+	case SB_THUMBTRACK:
+		si.nPos = si.nTrackPos;
+		break;
+	}
+
+	si.fMask = SIF_POS;
+	SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+	GetScrollInfo(hwnd, SB_VERT, &si);
+
+	if (si.nPos != yPos) {
+		ScrollWindow(hwnd, 0, NAM_DEFAULTCHARSIZE * (yPos - si.nPos), NULL, NULL);
+		UpdateWindow(hwnd);
+	}
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -273,9 +355,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		break;
 	// X or ALT+F4
 	case WM_CLOSE:
-		_HIDE(promptHWND);
-		_HIDE(inputHWND);
-		_HIDE(createNewHWND);
+		_HIDE(hwnd);
 		break;
 	// Window is being destroyed
 	case WM_DESTROY:
@@ -286,6 +366,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		DestroyWindow(promptHWND);
 		DestroyWindow(inputHWND);
 		DestroyWindow(createNewHWND);
+		break;
+	// User scrolled
+	case WM_VSCROLL:
+		handleScrolling(hwnd, wparam);
 		break;
 	// Window button click
 	case WM_COMMAND:
@@ -357,6 +441,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				_SHOW(createNewHWND);
 				SetFocus(createNewHWND_input);
 				break;
+			case NAM_TRAY_LISTALL:
+				_SHOW(listHWND);
+				break;
 			case NAM_TRAY_EXIT:
 				PostQuitMessage(0);
 				break;
@@ -406,7 +493,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreviInstance, LPSTR lpCmdLin
 	std::locale::global(std::locale(std::locale::empty(), new std::codecvt_utf8<wchar_t>)); // Read UTF-8 files
 	readOldData();
 	gDoubleClick = false;
-	gIcon = (HICON)LoadImage(NULL, TEXT("icon.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE);
+	gIcon = ExtractIcon(hInstance, TEXT("TrayBot.exe"), 0);
 
 	WNDCLASS wc;
 
@@ -424,14 +511,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreviInstance, LPSTR lpCmdLin
 	RegisterClass(&wc);
 
 	// Start window
-	inputHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - Input"), WS_OVERLAPPEDWINDOW, 10, 10, 310, 60, NULL, NULL, hInstance, NULL);
+	inputHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - Input"), NULL, 10, 10, 310, 60, NULL, NULL, hInstance, NULL);
 	_HIDE(inputHWND);
 
-	createNewHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - New Input Value"), WS_OVERLAPPEDWINDOW, 10, 10, 330, 180, NULL, NULL, hInstance, NULL);
+	createNewHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - New Input Value"), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, 10, 10, 330, 180, NULL, NULL, hInstance, NULL);
 	_HIDE(createNewHWND);
 
-	promptHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - Prompt"), WS_OVERLAPPEDWINDOW, 10, 10, 330, 150, NULL, NULL, hInstance, NULL);
+	promptHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - Prompt"), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, 10, 10, 330, 150, NULL, NULL, hInstance, NULL);
 	_HIDE(promptHWND);
+
+	listHWND = CreateWindow(TEXT("TrayBot"), TEXT("TrayBot - List"), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VSCROLL, 10, 10, 330, 250, NULL, NULL, hInstance, NULL);
+	_HIDE(listHWND);
+	setList();
 
 	// Center the windows to the screen
 	centerWindows();
