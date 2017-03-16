@@ -18,7 +18,8 @@
 #define NAM_TRAY_SHOWWINDOW 5000
 #define NAM_TRAY_ADDNEW 5001
 #define NAM_TRAY_LISTALL 5002
-#define NAM_TRAY_EXIT 5003
+#define NAM_TRAY_REMOVE 5003
+#define NAM_TRAY_EXIT 5004
 
 #define NAM_EDIT_INPUT 0
 #define NAM_BTN_ADDNEW 1
@@ -32,7 +33,8 @@
 enum class ACTION
 {
 	OPENFOLDER = 6000,
-	SETCLIPBOARD = 6001
+	SETCLIPBOARD = 6001,
+	RUNPROGRAM = 6002
 };
 
 //                           NAME          ACTION  INPUT
@@ -76,6 +78,7 @@ void _HIDE(HWND const& hwnd)
 void showNotification(std::wstring const& title, std::wstring const& msg)
 {
 	gNid.uFlags = NIF_INFO;
+	//gNid.dwInfoFlags = NIIF_NOSOUND;
 	wcscpy_s(gNid.szInfoTitle, title.c_str());
 	wcscpy_s(gNid.szInfo, msg.c_str());
 
@@ -96,22 +99,16 @@ void setScrollHeight()
 void setList()
 {
 	gListNextY = 0;
-	for (int i = 0; i < gEntries.size(); i++) {
+	for (unsigned int i = 0; i < gEntries.size(); i++) {
 		CreateWindow(TEXT("STATIC"), std::get<0>(gEntries[i]).c_str(), WS_VISIBLE | WS_CHILD, 10, gListNextY, 100, 20, listHWND, NULL, NULL, NULL);
 		gListNextY += 20;
 	}
 	setScrollHeight();
-	//setListHeight();
 }
 
 void addNewEntry(std::wstring const& name, ACTION const& action, std::wstring const& input)
 {
-	if (name == TEXT("")) {
-		showNotification(TEXT("Error"), TEXT("Values can not be empty"));
-		return;
-	}
-
-	if (input == TEXT("")) {
+	if (name == TEXT("") || input == TEXT("")) {
 		showNotification(TEXT("Error"), TEXT("Values can not be empty"));
 		return;
 	}
@@ -155,9 +152,8 @@ void addNewEntry(std::wstring const& name, ACTION const& action, std::wstring co
 void executeEntry(NAM_ENTRY ne)
 {
 	switch (std::get<1>(ne)) {
-	case ACTION::OPENFOLDER: {
+	case ACTION::OPENFOLDER:
 		ShellExecute(NULL, TEXT("explore"), std::get<2>(ne).c_str(), NULL, NULL, SW_SHOW);
-	}
 		break;
 	case ACTION::SETCLIPBOARD: {
 		std::wstring value = std::get<2>(ne);
@@ -176,12 +172,16 @@ void executeEntry(NAM_ENTRY ne)
 
 		showNotification(TEXT("Success"), TEXT("Copied '") + value + TEXT("' to clipboard"));
 	}
+	break;
+	case ACTION::RUNPROGRAM:
+		ShellExecute(NULL, NULL, std::get<2>(ne).c_str(), NULL, NULL, SW_SHOW);
 		break;
 	}
 }
 
 void parseInput(std::wstring const& str)
 {
+	if (str == TEXT("")) { return; }
 	for (NAM_ENTRY const& ne : gEntries) {
 		if (std::get<0>(ne) == str) {
 			executeEntry(ne);
@@ -213,6 +213,7 @@ void menuItems()
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_SHOWWINDOW, TEXT("Show Input"));
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_ADDNEW, TEXT("Add New"));
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_LISTALL, TEXT("List All"));
+	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_REMOVE, TEXT("Remove"));
 	AppendMenu(gTrayMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(gTrayMenu, MF_STRING, NAM_TRAY_EXIT, TEXT("Quit"));
 }
@@ -222,23 +223,29 @@ LRESULT CALLBACK newINPUTEdit(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	switch (msg) {
 	case WM_KILLFOCUS:
 		_HIDE(inputHWND);
-		return 0;
+		SetWindowText(inputHWND_input, TEXT(""));
+		break;
 	case WM_KEYDOWN:
 		switch (wparam) {
 		case VK_ESCAPE:
 			_HIDE(inputHWND);
-			return 0;
+			SetWindowText(inputHWND_input, TEXT(""));
+			break;
 		case VK_RETURN:
 			TCHAR buffer[1024];
 			GetWindowText(inputHWND_input, buffer, 1024);
 			parseInput(std::wstring(buffer));
 			SetWindowText(inputHWND_input, TEXT(""));
 			_HIDE(inputHWND);
-			return 0;
+			break;
 		}
+	case WM_CHAR:
+		if (wparam == VK_RETURN || wparam == VK_ESCAPE) { break; }
 	default:
 		return CallWindowProc(oldINPUTProc, hwnd, msg, wparam, lparam);
 	}
+	// Only get down here if didn't go into default
+	return 0;
 }
 
 void dropdownitems()
@@ -291,6 +298,28 @@ std::wstring selectFolder()
 	BROWSEINFO bi = { 0 };
 	bi.lpszTitle = TEXT("Select folder to open");
 	bi.ulFlags = BIF_RETURNONLYFSDIRS;
+	bi.lpfn = NULL;
+
+	LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
+	if (pidl == 0) { return TEXT(""); }
+
+	TCHAR pathBuffer[MAX_PATH];
+	SHGetPathFromIDList(pidl, pathBuffer);
+
+	IMalloc* imalloc;
+	if (SUCCEEDED(SHGetMalloc(&imalloc))) {
+		imalloc->Free(pidl);
+		imalloc->Release();
+	}
+
+	return pathBuffer;
+}
+
+std::wstring selectFile()
+{
+	BROWSEINFO bi = { 0 };
+	bi.lpszTitle = TEXT("Select file");
+	bi.ulFlags = BIF_BROWSEINCLUDEFILES;
 	bi.lpfn = NULL;
 
 	LPITEMIDLIST pidl = SHBrowseForFolder(&bi);
@@ -386,11 +415,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				SetWindowText(createNewHWND_input, TEXT(""));
 				addNewEntry(std::wstring(buffer), ACTION::OPENFOLDER, path);
 			}
-										   break;
+			break;
 			case int(ACTION::SETCLIPBOARD) :
 				currentPromptAction = ACTION::SETCLIPBOARD;
 				showPrompt(TEXT("Set clipboard to:"));
 				break;
+			case int(ACTION::RUNPROGRAM) :
+				currentPromptAction = ACTION::RUNPROGRAM;
+				std::wstring path = selectFile();
+
+				TCHAR buffer[1024];
+				GetWindowText(createNewHWND_input, buffer, 1024);
+				SetWindowText(createNewHWND_input, TEXT(""));
+				addNewEntry(std::wstring(buffer), ACTION::RUNPROGRAM, path);
 			}
 		}
 			break;
@@ -436,6 +473,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			switch (clicked) {
 			case NAM_TRAY_SHOWWINDOW:
 				_SHOW(inputHWND);
+				SetFocus(inputHWND_input);
 				break;
 			case NAM_TRAY_ADDNEW:
 				_SHOW(createNewHWND);
@@ -443,6 +481,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				break;
 			case NAM_TRAY_LISTALL:
 				_SHOW(listHWND);
+				break;
+			case NAM_TRAY_REMOVE:
+				// TODO
 				break;
 			case NAM_TRAY_EXIT:
 				PostQuitMessage(0);

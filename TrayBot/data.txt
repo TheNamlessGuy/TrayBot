@@ -17,3 +17,5 @@ jy|6000|C:\Users\TheNamlessGuy\Music
 gggggg|6000|C:\
 hrh|6000|D:\
 gegeeag|6000|C:\Users\TheNamlessGuy\Music
+kk|6002|D:\Programs\Microsoft VS Code\Code.exe
+re|6002|D:\Programs\Microsoft VS Code\Code.exe
