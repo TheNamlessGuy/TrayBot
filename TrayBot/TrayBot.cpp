@@ -252,6 +252,7 @@ void dropdownitems()
 {
 	SendMessage(createNewHWND_dropdown, CB_ADDSTRING, 0, (LPARAM)TEXT("Open Folder"));
 	SendMessage(createNewHWND_dropdown, CB_ADDSTRING, 0, (LPARAM)TEXT("Set Clipboard"));
+	SendMessage(createNewHWND_dropdown, CB_ADDSTRING, 0, (LPARAM)TEXT("Run/Open file"));
 
 	// Set index of intially shown item
 	SendMessage(createNewHWND_dropdown, CB_SETCURSEL, 0, 0);
