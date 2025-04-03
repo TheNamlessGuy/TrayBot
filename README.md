@@ -2,8 +2,14 @@
 A bot that lives in your system tray and eats your input, barfing out some cool stuff in response
 
 ## But what does that even mean?
-Well, you can press a combo of buttons (currently CTRL+ALT+SHIFT+Q) to bring up a textbox, in which you can type things. Depending on what you type, the bot does things!
+Well, you can press a combo of buttons (currently locked to CTRL+ALT+SHIFT+Q) to bring up a textbox, in which you can type things. Depending on what you type, the bot does things!  
 What it does highly depends on what you have inputted and told it to do in case of that input before, though.
+
+For example, you can set it so if you write "music" into the box, it opens your music folder.  
+Or perhaps you set it to start the calculator when you write "calc".  
+Maybe when you write "tm", the bot copies the trademark symbol into your clipboard.
+
+Your imagination (and the available actions) are the only limitations!
 
 ## Example usage
 1. Right click the icon in your system tray
