@@ -22,3 +22,6 @@ Your imagination (and the available actions) are the only limitations!
 8. Right click the icon again, this time selecting "List All"
 9. Check that the new keyword is in the list
 10. Press the button combo (CTRL+ALT+SHIFT+Q), input your keyword and voila, it does what you told it to do
+
+## Cross-hosted
+This repository is hosted both on [GitHub](https://github.com/TheNamlessGuy/TrayBot) and [Codeberg](https://codeberg.org/TheNamlessGuy/TrayBot).
